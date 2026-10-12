@@ -25,5 +25,19 @@ public class IngestionServiceApp {
         for (Map cell : hubs){
             System.out.println(cell);
         }
+        // get all cleaned data
+        app.get("/intersections", ctx ->{
+            String district = ctx.queryParam("district");
+            if (district == null){
+                ctx.json(hubs);
+            }else {
+                ctx.json(hubs.stream().filter(h ->district.equalsIgnoreCase((String) h.get("district"))).toList());
+            }
+        });
+        app.get("/intersections/{id}",ctx ->{
+            String id = ctx.pathParam("id").toUpperCase();
+            hubs.stream().filter(h -> id.equalsIgnoreCase((String) h.get("id"))).findFirst().ifPresentOrElse(ctx::json,
+                    () ->ctx.status(404).result("not found" + id));
+        });
     }
 }
