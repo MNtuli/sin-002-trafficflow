@@ -49,4 +49,58 @@ public class IntersectionWatchdogApp {
         return app;
     }
 
+    public static void startActiveMqConsumers(String brokerUrl) {
+        new Thread(() -> {
+            try {
+                ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(brokerUrl);
+                Connection connection = factory.createConnection();
+                connection.start();
+
+                Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+
+                // Consume Heartbeat
+                Destination heartbeatQueue = session.createQueue(MqConfig.HEARTBEAT_QUEUE);
+                MessageConsumer heartbeatConsumer = session.createConsumer(heartbeatQueue);
+                heartbeatConsumer.setMessageListener(message -> {
+                    if (message instanceof TextMessage) {
+                        lastHeartbeat.set(Instant.now());
+                        serviceAlertTriggered.set(false);
+                    }
+                });
+
+                // Consume DLQ
+                Destination dlq = session.createQueue(DLQ_NAME);
+                MessageConsumer dlqConsumer = session.createConsumer(dlq);
+                dlqConsumer.setMessageListener(message -> {
+                    try {
+                        String payload = (message instanceof TextMessage tm) ? tm.getText() : message.toString();
+                        cryForHelp("Dead-letter message detected in " + DLQ_NAME + ": " + payload);
+                    } catch (JMSException e) {
+                        System.err.println("[WATCHDOG ERROR] " + e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                System.err.println("[WATCHDOG ERROR] Connection failed: " + e.getMessage());
+            }
+        }, "test-mq-consumer").start();
+    }
+
+    public static void startWatchdogTimer() {
+        SCHEDULER.scheduleAtFixedRate(() -> {
+            Instant last = lastHeartbeat.get();
+            if (last == null) return;
+
+            long elapsed = Instant.now().getEpochSecond() - last.getEpochSecond();
+            if (elapsed > HEARTBEAT_TIMEOUT_SECONDS) {
+                if (!serviceAlertTriggered.getAndSet(true)) {
+                    cryForHelp("Intersection Service DOWN! No heartbeat for " + elapsed + " seconds.");
+                }
+            }
+        }, 5, 3, TimeUnit.SECONDS);
+    }
+
+    public static void cryForHelp(String reason) {
+        serviceAlertTriggered.set(true);
+        System.err.println("[ALERT - CRY FOR HELP] " + reason);
+    }
 }
