@@ -20,8 +20,17 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class IntersectionServiceApp {
+
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
     private static final ScheduledExecutorService SCHEDULER = Executors.newSingleThreadScheduledExecutor();
+
+    public static void main(String[] args) {
+        String ingestionUrl = System.getenv().getOrDefault("INGESTION_SERVICE_URL", "http://localhost:7020");
+        createApp(ingestionUrl).start(7021);
+
+        startHeartbeatPublisher();
+    }
+
     public static Javalin createApp(String ingestionServiceUrl) {
         Javalin app = Javalin.create();
 
@@ -40,10 +49,11 @@ public class IntersectionServiceApp {
 
             try {
                 HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+                ctx.contentType("application/json");
                 if (response.statusCode() == 200) {
-                    ctx.status(200).json("{\"valid\": true, \"id\": \"" + id + "\"}");
+                    ctx.status(200).result("{\"valid\":true,\"id\":\"" + id + "\"}");
                 } else {
-                    ctx.status(404).json("{\"valid\": false, \"id\": \"" + id + "\"}");
+                    ctx.status(404).result("{\"valid\":false,\"id\":\"" + id + "\"}");
                 }
             } catch (IOException | InterruptedException e) {
                 ctx.status(502).result("Error querying ingestion-service: " + e.getMessage());
@@ -60,10 +70,11 @@ public class IntersectionServiceApp {
 
             try {
                 HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() == 200 && !response.body().equals("[]")) {
-                    ctx.status(200).json("{\"valid\": true, \"district\": \"" + district + "\"}");
+                ctx.contentType("application/json");
+                if (response.statusCode() == 200 && !response.body().trim().equals("[]")) {
+                    ctx.status(200).result("{\"valid\":true,\"district\":\"" + district + "\"}");
                 } else {
-                    ctx.status(404).json("{\"valid\": false, \"district\": \"" + district + "\"}");
+                    ctx.status(404).result("{\"valid\":false,\"district\":\"" + district + "\"}");
                 }
             } catch (IOException | InterruptedException e) {
                 ctx.status(502).result("Error querying ingestion-service: " + e.getMessage());
@@ -71,6 +82,38 @@ public class IntersectionServiceApp {
         });
 
         return app;
+    }
+
+    private static void startHeartbeatPublisher() {
+        SCHEDULER.scheduleAtFixedRate(() -> {
+            Connection connection = null;
+            Session session = null;
+            MessageProducer producer = null;
+            try {
+                ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(MqConfig.BROKER_URL);
+                connection = connectionFactory.createConnection();
+                connection.start();
+
+                session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+                Destination destination = session.createQueue(MqConfig.HEARTBEAT_QUEUE);
+
+                producer = session.createProducer(destination);
+                String heartbeatPayload = "{\"service\":\"intersection-service\",\"status\":\"ALIVE\",\"timestamp\":\""
+                        + Instant.now() + "\"}";
+
+                TextMessage message = session.createTextMessage(heartbeatPayload);
+                producer.send(message);
+            } catch (Exception e) {
+                System.err.println("Failed to send heartbeat to ActiveMQ: " + e.getMessage());
+            } finally {
+                try {
+                    if (producer != null) producer.close();
+                    if (session != null) session.close();
+                    if (connection != null) connection.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }, 0, 5, TimeUnit.SECONDS);
     }
 }
 
