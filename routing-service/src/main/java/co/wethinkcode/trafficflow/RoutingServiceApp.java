@@ -69,6 +69,56 @@ public class RoutingServiceApp {
         return app;
     }
 
+    public static void startTopicSubscriber(String brokerUrl) {
+        new Thread(() -> {
+            try {
+                ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(brokerUrl);
+                Connection connection = factory.createConnection();
+                connection.start();
+
+                Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+                Topic topic = session.createTopic(MqConfig.TOPIC);
+                MessageConsumer consumer = session.createConsumer(topic);
+
+                consumer.setMessageListener(message -> {
+                    if (message instanceof TextMessage textMessage) {
+                        try {
+                            String text = textMessage.getText();
+                            JsonNode json = OBJECT_MAPPER.readTree(text);
+
+                            String id = null;
+                            if (json.has("intersectionId")) {
+                                id = json.get("intersectionId").asText().toUpperCase();
+                            } else if (json.has("id")) {
+                                id = json.get("id").asText().toUpperCase();
+                            }
+
+                            if (id != null) {
+                                double multiplier = 1.0;
+                                if (json.has("congestionFactor")) {
+                                    multiplier = json.get("congestionFactor").asDouble(1.0);
+                                } else if (json.has("level")) {
+                                    String level = json.get("level").asText().toUpperCase();
+                                    multiplier = switch (level) {
+                                        case "LOW" -> 1.0;
+                                        case "MODERATE", "MEDIUM" -> 1.5;
+                                        case "HIGH", "HEAVY" -> 2.2;
+                                        case "SEVERE", "JAMMED" -> 3.5;
+                                        default -> json.get("level").asDouble(1.0);
+                                    };
+                                }
+                                CONGESTION_MAP.put(id, multiplier);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("[ROUTING ERROR] Error parsing congestion message: " + e.getMessage());
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                System.err.println("[ROUTING ERROR] Failed to connect to ActiveMQ: " + e.getMessage());
+            }
+        }, "routing-topic-subscriber").start();
+    }
 
     public static void main(String[] args) {
         createApp().start(7023);
