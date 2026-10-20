@@ -11,6 +11,8 @@ public class IntersectionServiceApp {
 
         // TODO (Validates intersection/district names (source of truth).)
         // Add domain endpoints for intersection-service here.
+
+//        app.get("/")
     }
 }
 
