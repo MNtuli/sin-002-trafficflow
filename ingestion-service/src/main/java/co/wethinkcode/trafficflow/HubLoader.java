@@ -9,9 +9,9 @@ import java.util.*;
 
 public class HubLoader {
 
-    public static List<Map> load(String resourceName) throws Exception {
-        //Map<String, hub> byId = new LinkedHashMap<>();
-        List<Map> dataList = new ArrayList<>();
+    public static List<Map<String, Object>> load(String resourceName) throws Exception {
+        // Use a LinkedHashMap to preserve insertion order while deduplicating by ID
+        Map<String, Map<String, Object>> recordsById = new LinkedHashMap<>();
 
         try (InputStream is = Thread.currentThread()
                 .getContextClassLoader()
@@ -24,27 +24,28 @@ public class HubLoader {
             try (CSVReader csvReader = new CSVReader(
                     new InputStreamReader(is, StandardCharsets.UTF_8))) {
 
-                //skip first line
+                // Skip header row: intersection_id,District ,signal_type,active_flag
                 csvReader.readNext();
 
                 String[] nextRecord;
 
-                // cleaning and grouping the data
                 while ((nextRecord = csvReader.readNext()) != null) {
-                    // skip if the is data missing
                     if (nextRecord.length < 4) continue;
-                    Map<String, Object> dict = new LinkedHashMap<>();
+
                     String id = clean(nextRecord[0]).toUpperCase();
                     if (id.isEmpty()) continue;
-                    dict.put("id", id);
-                    dict.put("district", titleCase(nextRecord[1]));
-                    dict.put("signalType", normalizeSignal(nextRecord[2]));
-                    dict.put("active", parseFlag(nextRecord[3]));
-                    dataList.add(dict);
+
+                    Map<String, Object> record = new LinkedHashMap<>();
+                    record.put("id", id);
+                    record.put("district", titleCase(nextRecord[1]));
+                    record.put("signalType", normalizeSignal(nextRecord[2]));
+                    record.put("active", parseFlag(nextRecord[3]));
+
+                    recordsById.put(id, record);
                 }
             }
         }
-        return dataList;
+        return new ArrayList<>(recordsById.values());
     }
 
     private static String clean(String s) {
@@ -61,11 +62,16 @@ public class HubLoader {
         return (s.isEmpty() || s.equals("unknown")) ? null : s;
     }
 
-    // Y/yes/true/1 -> true; everything else (N/no/false/0/unknown/blank) -> false
+    // Y / yes / true / 1 -> true; everything else -> false
     private static boolean parseFlag(String s) {
         switch (clean(s).toLowerCase()) {
-            case "y": case "yes": case "true": case "1": return true;
-            default: return false;
+            case "y":
+            case "yes":
+            case "true":
+            case "1":
+                return true;
+            default:
+                return false;
         }
     }
 }

@@ -77,6 +77,7 @@ class IngestionServiceAppTest {
         assertThat(response.body()).doesNotContain("\"district\":\"South\"");
     }
 
+
     @Test
     @DisplayName("GET /intersections/{id} returns 404 when ID does not exist")
     void testGetIntersectionNotFound() throws Exception {
@@ -88,6 +89,6 @@ class IngestionServiceAppTest {
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(404);
-        assertThat(response.body()).contains("not foundNON_EXISTENT_ID");
+        assertThat(response.body()).contains("not found: NON_EXISTENT_ID");
     }
 }

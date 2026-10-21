@@ -13,7 +13,7 @@ public class IngestionServiceApp {
         // TODO: read and clean src/main/resources/intersections-legacy.csv (intersections, districts, signal types data —
         // trim whitespace, fix casing, normalize dates/booleans) and expose the
         // cleaned records here for the other services to consume.
-        List<Map> hubs = HubLoader.load("intersections-legacy.csv");
+        List<Map<String, Object>> hubs = HubLoader.load("intersections-legacy.csv");
 
         app.get("/intersections", ctx -> {
             String district = ctx.queryParam("district");
@@ -21,7 +21,8 @@ public class IngestionServiceApp {
                 ctx.json(hubs);
             } else {
                 ctx.json(hubs.stream()
-                        .filter(h -> district.equalsIgnoreCase((String) h.get("district")))
+                        .filter(h -> h.get("district") != null
+                                && district.equalsIgnoreCase((String) h.get("district")))
                         .toList());
             }
         });
@@ -33,7 +34,7 @@ public class IngestionServiceApp {
                     .findFirst()
                     .ifPresentOrElse(
                             ctx::json,
-                            () -> ctx.status(404).result("not found" + id)
+                            () -> ctx.status(404).result("not found: " + id)
                     );
         });
 
